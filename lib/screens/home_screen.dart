@@ -21,7 +21,7 @@ class HomeScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF0F2027),
       appBar: AppBar(
         title: const Text(
-          'milk',
+          'Item',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [

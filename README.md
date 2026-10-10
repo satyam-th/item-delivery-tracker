@@ -1,6 +1,6 @@
-# Milk - Daily Delivery & Shop Record App
+# Item Delivery & Shop Record App
 
-A complete, offline-first Flutter application designed for local businesses to track daily deliveries, returns, rates, and automated billing. It is optimized for ease of use, with dual-language support (English/Nepali) and automatic daily resets.
+A complete, offline-first Flutter application designed for local businesses to track daily item deliveries, returns, rates, and automated billing. It is optimized for ease of use, with dual-language support (English/Nepali) and automatic daily resets.
 
 ## 🚀 Features
 

@@ -25,7 +25,7 @@ class ShopRecordApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'milk',
+      title: 'Item',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         scaffoldBackgroundColor: Colors.white,
@@ -73,7 +73,7 @@ class _MainNavigationState extends State<MainNavigation> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: const [
               Text(
-                'milk',
+                'Item',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 32,
