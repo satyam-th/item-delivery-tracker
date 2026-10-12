@@ -227,7 +227,8 @@ class HomeScreen extends StatelessWidget {
     final displayName = cust.name;
 
     return InkWell(
-      onTap: isTotalRow ? null : () {
+      onTap: isTotalRow ? null : () => _showCustomerUpdateSheet(context, cust),
+      onLongPress: isTotalRow ? null : () {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const ManageCustomersScreen()),
@@ -245,17 +246,34 @@ class HomeScreen extends StatelessWidget {
             bottom: BorderSide(color: Colors.black12, width: 1),
           ),
         ),
-        child: Text(
-          displayName,
-          style: TextStyle(
-            color: Colors.black87, 
-            fontSize: 13,
-            fontWeight: isTotalRow ? FontWeight.bold : FontWeight.w500,
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                displayName,
+                style: TextStyle(
+                  color: Colors.black87, 
+                  fontSize: 13,
+                  fontWeight: isTotalRow ? FontWeight.bold : FontWeight.w500,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (!isTotalRow)
+              const Icon(Icons.edit_note, size: 16, color: Colors.black38),
+          ],
         ),
       ),
+    );
+  }
+
+  void _showCustomerUpdateSheet(BuildContext context, Customer cust) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CustomerLoadReturnSheet(customer: cust),
     );
   }
 
@@ -379,6 +397,494 @@ class HomeScreen extends StatelessWidget {
           color: Colors.black87, 
           fontSize: 13,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class CustomerLoadReturnSheet extends StatefulWidget {
+  final Customer customer;
+
+  const CustomerLoadReturnSheet({super.key, required this.customer});
+
+  @override
+  State<CustomerLoadReturnSheet> createState() => _CustomerLoadReturnSheetState();
+}
+
+class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
+  int _activeTab = 0; // 0 = Load, 1 = Return
+  final Map<String, TextEditingController> _loadControllers = {};
+  final Map<String, TextEditingController> _returnControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final dp = Provider.of<DataProvider>(context, listen: false);
+    for (var item in dp.items) {
+      final cell = dp.getCellData(widget.customer.id, item.id);
+      _loadControllers[item.id] = TextEditingController(
+        text: cell.delivered == 0 ? '' : cell.delivered.toString(),
+      );
+      _returnControllers[item.id] = TextEditingController(
+        text: cell.returned == 0 ? '' : cell.returned.toString(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var ctrl in _loadControllers.values) {
+      ctrl.dispose();
+    }
+    for (var ctrl in _returnControllers.values) {
+      ctrl.dispose();
+    }
+    super.dispose();
+  }
+
+  void _stepQuantity(String itemId, bool isLoad, int delta) {
+    final ctrl = isLoad ? _loadControllers[itemId] : _returnControllers[itemId];
+    if (ctrl == null) return;
+    int current = int.tryParse(ctrl.text) ?? 0;
+    int updated = current + delta;
+    if (updated < 0) updated = 0;
+    final newText = updated == 0 ? '' : updated.toString();
+    ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
+    setState(() {});
+  }
+
+  void _save(BuildContext context) {
+    final dp = Provider.of<DataProvider>(context, listen: false);
+    final locale = Provider.of<LocaleProvider>(context, listen: false);
+
+    final loads = <String, int>{};
+    final returns = <String, int>{};
+
+    for (var item in dp.items) {
+      loads[item.id] = int.tryParse(_loadControllers[item.id]?.text ?? '') ?? 0;
+      returns[item.id] = int.tryParse(_returnControllers[item.id]?.text ?? '') ?? 0;
+    }
+
+    dp.updateCustomerGrid(
+      customerId: widget.customer.id,
+      loads: loads,
+      returns: returns,
+    );
+
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          locale.isNepali
+              ? '${widget.customer.name} को रेकर्ड सुरक्षित भयो'
+              : 'Records saved for ${widget.customer.name}',
+        ),
+        backgroundColor: const Color(0xFF138D5B),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dp = Provider.of<DataProvider>(context);
+    final locale = Provider.of<LocaleProvider>(context);
+    final items = dp.items;
+
+    int totalLoadCount = 0;
+    int totalReturnCount = 0;
+    for (var item in items) {
+      totalLoadCount += int.tryParse(_loadControllers[item.id]?.text ?? '') ?? 0;
+      totalReturnCount += int.tryParse(_returnControllers[item.id]?.text ?? '') ?? 0;
+    }
+
+    final isLoad = _activeTab == 0;
+    final themeColor = isLoad ? const Color(0xFF138D5B) : const Color(0xFFD32F2F);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Top pull bar
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 6),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Customer Name Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: const Color(0xFF138D5B).withOpacity(0.15),
+                    child: const Icon(Icons.person, color: Color(0xFF138D5B), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.customer.name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          locale.isNepali
+                              ? 'सामान लोड वा फिर्ता अपडेट गर्नुहोस्'
+                              : 'Update Load & Return quantities',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.black54),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Tab Switcher: Load (दिएको) vs Return (फिर्ता)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    // Load Tab
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() => _activeTab = 0),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _activeTab == 0
+                                ? const Color(0xFF138D5B)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: _activeTab == 0
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF138D5B).withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    )
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.local_shipping_outlined,
+                                size: 18,
+                                color: _activeTab == 0 ? Colors.white : Colors.black87,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                locale.load,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _activeTab == 0 ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              if (totalLoadCount > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _activeTab == 0 ? Colors.white24 : Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$totalLoadCount',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: _activeTab == 0 ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // Return Tab
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() => _activeTab = 1),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _activeTab == 1
+                                ? const Color(0xFFD32F2F)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: _activeTab == 1
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFFD32F2F).withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    )
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.assignment_return_outlined,
+                                size: 18,
+                                color: _activeTab == 1 ? Colors.white : Colors.black87,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                locale.returnItem,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _activeTab == 1 ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              if (totalReturnCount > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _activeTab == 1 ? Colors.white24 : Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$totalReturnCount',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: _activeTab == 1 ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Item List
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                itemCount: items.length,
+                separatorBuilder: (context, i) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final ctrl = isLoad ? _loadControllers[item.id]! : _returnControllers[item.id]!;
+                  final otherVal = isLoad
+                      ? (_returnControllers[item.id]?.text.isEmpty ?? true ? '0' : _returnControllers[item.id]!.text)
+                      : (_loadControllers[item.id]?.text.isEmpty ?? true ? '0' : _loadControllers[item.id]!.text);
+                  final rate = dp.getRate(widget.customer.id, item.id);
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: [
+                        // Item name & details
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Text(
+                                    'Rs. ${rate.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isLoad ? 'फिर्ता: $otherVal' : 'दिएको: $otherVal',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Stepper / Input Field
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.remove_circle_outline,
+                                color: themeColor,
+                              ),
+                              iconSize: 28,
+                              onPressed: () => _stepQuantity(item.id, isLoad, -1),
+                            ),
+                            SizedBox(
+                              width: 65,
+                              height: 42,
+                              child: TextField(
+                                controller: ctrl,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                decoration: InputDecoration(
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  hintText: '0',
+                                  filled: true,
+                                  fillColor: themeColor.withOpacity(0.06),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(
+                                      color: themeColor,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(
+                                      color: Colors.grey.shade300,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(
+                                      color: themeColor,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.add_circle,
+                                color: themeColor,
+                              ),
+                              iconSize: 28,
+                              onPressed: () => _stepQuantity(item.id, isLoad, 1),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const Divider(height: 1),
+
+            // Save Button
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () => _save(context),
+                  icon: const Icon(Icons.check, color: Colors.white),
+                  label: Text(
+                    locale.save,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF138D5B),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -100,26 +100,31 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     super.dispose();
   }
 
+  String? _lastActiveDateStr;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _isLoaded) {
-      _checkMidnightReset();
+      _ensureCurrentDateSync();
     }
   }
 
-  Future<void> _checkMidnightReset() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastActiveDate = prefs.getString('lastActiveDate');
+  void _ensureCurrentDateSync() {
+    if (!_isLoaded) return;
     final todayStr = DateTime.now().toIso8601String().substring(0, 10); // Format: YYYY-MM-DD
-
-    if (lastActiveDate != null && lastActiveDate != todayStr) {
-      // It's a new day! Reset the grid data to zero.
+    if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
+      // It's a new day! Reset the grid data.
       _gridData.clear();
-      await prefs.setString('lastActiveDate', todayStr);
+      _lastActiveDateStr = todayStr;
+      
+      // Fire and forget saves
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('lastActiveDate', todayStr);
+      });
       _saveToDisk();
-      notifyListeners();
-    } else if (lastActiveDate == null) {
-      await prefs.setString('lastActiveDate', todayStr);
+      
+      // Schedule notifyListeners so we don't break during build phase
+      Future.microtask(() => notifyListeners());
     }
   }
 
@@ -129,13 +134,14 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
 
     // Check midnight reset during startup
-    final lastActiveDate = prefs.getString('lastActiveDate');
+    _lastActiveDateStr = prefs.getString('lastActiveDate');
     final todayStr = DateTime.now().toIso8601String().substring(0, 10);
     bool shouldResetGrid = false;
 
-    if (lastActiveDate != null && lastActiveDate != todayStr) {
+    if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
       shouldResetGrid = true;
     }
+    _lastActiveDateStr = todayStr;
     await prefs.setString('lastActiveDate', todayStr);
 
     // Load customers
@@ -261,6 +267,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   // ===================== GRID & RATES =====================
 
   CellData getCellData(String customerId, String itemId) {
+    _ensureCurrentDateSync();
     return _gridData[customerId]?[itemId] ?? CellData(delivered: 0, returned: 0);
   }
 
@@ -289,6 +296,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   double getRowTotal(String customerId) {
+    _ensureCurrentDateSync();
     double total = 0;
     if (_gridData.containsKey(customerId)) {
       _gridData[customerId]!.forEach((itemId, cell) {
@@ -308,6 +316,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   }
 
   void updateCell(String customerId, String itemId, int load, int returnQty) {
+    _ensureCurrentDateSync();
     if (!_gridData.containsKey(customerId)) {
       _gridData[customerId] = {};
     }
@@ -325,6 +334,53 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
       rate: rate, total: (load - returnQty) * rate,
       date: DateTime.now(),
     ));
+
+    notifyListeners();
+    _saveToDisk();
+  }
+
+  void updateCustomerGrid({
+    required String customerId,
+    required Map<String, int> loads,
+    required Map<String, int> returns,
+  }) {
+    _ensureCurrentDateSync();
+    if (!_gridData.containsKey(customerId)) {
+      _gridData[customerId] = {};
+    }
+
+    final cust = _customers.firstWhere(
+      (c) => c.id == customerId,
+      orElse: () => Customer(id: customerId, name: 'Unknown'),
+    );
+    final now = DateTime.now();
+
+    for (var item in _items) {
+      final oldCell = _gridData[customerId]?[item.id];
+      final oldLoad = oldCell?.delivered ?? 0;
+      final oldRet = oldCell?.returned ?? 0;
+
+      final newLoad = loads[item.id] ?? oldLoad;
+      final newRet = returns[item.id] ?? oldRet;
+
+      _gridData[customerId]![item.id] = CellData(delivered: newLoad, returned: newRet);
+
+      if (newLoad != oldLoad || newRet != oldRet) {
+        final rate = getRate(customerId, item.id);
+        _transactions.insert(0, TransactionRecord(
+          id: '${now.millisecondsSinceEpoch}_${item.id}',
+          customerId: customerId,
+          customerName: cust.name,
+          itemId: item.id,
+          itemName: item.name,
+          delivered: newLoad,
+          returned: newRet,
+          rate: rate,
+          total: (newLoad - newRet) * rate,
+          date: now,
+        ));
+      }
+    }
 
     notifyListeners();
     _saveToDisk();
@@ -435,4 +491,10 @@ class LocaleProvider with ChangeNotifier {
   
   String get noHistory => _isNepali ? 'कुनै इतिहास छैन' : 'No history found';
   String get noCustomers => _isNepali ? 'कुनै ग्राहक छैन' : 'No customers found';
+
+  String get load => _isNepali ? 'दिएको (Load)' : 'Load';
+  String get returnItem => _isNepali ? 'फिर्ता (Return)' : 'Return';
+  String get save => _isNepali ? 'बचत गर्नुहोस्' : 'Save';
+  String get cancel => _isNepali ? 'रद्द गर्नुहोस्' : 'Cancel';
+  String get updateFor => _isNepali ? 'अपडेट गर्नुहोस्' : 'Update for';
 }
