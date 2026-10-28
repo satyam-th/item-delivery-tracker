@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants/app_colors.dart';
 import '../providers.dart';
 
 class ManageCustomersScreen extends StatelessWidget {
@@ -16,10 +17,11 @@ class ManageCustomersScreen extends StatelessWidget {
 
   void _showCustomerDialog(BuildContext context, {Customer? customer}) {
     final nameCtrl = TextEditingController(text: customer?.name ?? '');
+    final locale = Provider.of<LocaleProvider>(context, listen: false);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(customer == null ? 'Add Person' : 'Edit Person'),
+        title: Text(customer == null ? locale.addPerson : locale.editPerson),
         content: TextField(
           controller: nameCtrl,
           autofocus: true,
@@ -31,25 +33,58 @@ class ManageCustomersScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context), 
-            child: const Text('Cancel')
+            child: Text(locale.cancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF138D5B),
+              backgroundColor: AppColors.primaryGreen,
               foregroundColor: Colors.white,
             ),
             onPressed: () {
-              if (nameCtrl.text.trim().isNotEmpty) {
+              final text = nameCtrl.text.trim();
+              if (text.isNotEmpty) {
                 final dp = Provider.of<DataProvider>(context, listen: false);
                 if (customer == null) {
-                  dp.addCustomer(nameCtrl.text.trim());
+                  dp.addCustomer(text);
                 } else {
-                  dp.editCustomer(customer.id, nameCtrl.text.trim());
+                  dp.editCustomer(customer.id, text);
                 }
                 Navigator.pop(context);
               }
             },
-            child: const Text('Save'),
+            child: Text(locale.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteCustomer(BuildContext context, Customer customer) {
+    final locale = Provider.of<LocaleProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(locale.deleteConfirmTitle),
+        content: Text(
+          locale.isNepali
+              ? '${customer.name} लाई हटाउन निश्चित हुनुहुन्छ? उहाँको सबै रेकर्ड मेटिनेछ।'
+              : 'Are you sure you want to delete ${customer.name}? All their records will be removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(locale.cancel),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.returnRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Provider.of<DataProvider>(context, listen: false).deleteCustomer(customer.id);
+              Navigator.pop(ctx);
+            },
+            child: Text(locale.delete),
           ),
         ],
       ),
@@ -64,8 +99,8 @@ class ManageCustomersScreen extends StatelessWidget {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(locale.manageCustomers),
-        backgroundColor: const Color(0xFF0F2027),
-        foregroundColor: const Color(0xFFF1A8A6),
+        backgroundColor: AppColors.darkNavy,
+        foregroundColor: Colors.white,
       ),
       body: Consumer<DataProvider>(
         builder: (context, data, child) {
@@ -103,12 +138,12 @@ class ManageCustomersScreen extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit, color: Color(0xFF138D5B), size: 20),
+                        icon: const Icon(Icons.edit, color: AppColors.primaryGreen, size: 20),
                         onPressed: () => _showCustomerDialog(context, customer: c),
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                        onPressed: () => data.deleteCustomer(c.id),
+                        onPressed: () => _confirmDeleteCustomer(context, c),
                       ),
                       ReorderableDragStartListener(
                         index: index,
@@ -127,9 +162,9 @@ class ManageCustomersScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCustomerDialog(context),
-        backgroundColor: const Color(0xFF138D5B),
+        backgroundColor: AppColors.primaryGreen,
         icon: const Icon(Icons.person_add, color: Colors.white),
-        label: const Text('Add Person', style: TextStyle(color: Colors.white)),
+        label: Text(locale.addPerson, style: const TextStyle(color: Colors.white)),
       ),
     );
   }

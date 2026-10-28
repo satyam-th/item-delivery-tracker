@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'constants/app_colors.dart';
 import 'providers.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
@@ -30,12 +31,12 @@ class ShopRecordApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: Colors.white,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0F2027),
+          backgroundColor: AppColors.darkNavy,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF138D5B)),
-        useMaterial3: false,
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaryGreen),
+        useMaterial3: true,
       ),
       home: const MainNavigation(),
     );
@@ -67,7 +68,7 @@ class _MainNavigationState extends State<MainNavigation> {
     // Show a loading screen while data loads from SharedPreferences
     if (!data.isLoaded) {
       return Scaffold(
-        backgroundColor: const Color(0xFF0F2027),
+        backgroundColor: AppColors.darkNavy,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -81,7 +82,7 @@ class _MainNavigationState extends State<MainNavigation> {
                 ),
               ),
               SizedBox(height: 24),
-              CircularProgressIndicator(color: Color(0xFF138D5B)),
+              CircularProgressIndicator(color: AppColors.primaryGreen),
             ],
           ),
         ),
@@ -93,7 +94,7 @@ class _MainNavigationState extends State<MainNavigation> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: const Color(0xFF138D5B),
+        selectedItemColor: AppColors.primaryGreen,
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,

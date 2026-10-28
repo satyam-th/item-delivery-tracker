@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,11 +82,15 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   Map<String, double> _universalRates = {};
   Map<String, Map<String, double>> _customRates = {};
   Map<String, Map<String, CellData>> _gridData = {};
+  Map<String, int> _morningStock = {};
   List<TransactionRecord> _transactions = [];
   List<String> _history = []; // calculator history
 
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded;
+
+  bool _isSaving = false;
+  bool _hasPendingSave = false;
 
   DataProvider() {
     WidgetsBinding.instance.addObserver(this);
@@ -113,17 +116,32 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     if (!_isLoaded) return;
     final todayStr = DateTime.now().toIso8601String().substring(0, 10); // Format: YYYY-MM-DD
     if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
-      // It's a new day! Reset the grid data.
+      // It's a new day! Archive yesterday's grid data if it had active data
+      if (_gridData.isNotEmpty) {
+        SharedPreferences.getInstance().then((prefs) {
+          final yesterdayData = jsonEncode(
+            _gridData.map((custId, inner) => MapEntry(
+              custId,
+              inner.map((itemId, cell) => MapEntry(itemId, cell.toJson())),
+            )),
+          );
+          prefs.setString('archivedGrid_$_lastActiveDateStr', yesterdayData);
+        });
+      }
+      if (_morningStock.isNotEmpty) {
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setString('archivedMorningStock_$_lastActiveDateStr', jsonEncode(_morningStock));
+        });
+      }
       _gridData.clear();
+      _morningStock.clear();
       _lastActiveDateStr = todayStr;
       
-      // Fire and forget saves
       SharedPreferences.getInstance().then((prefs) {
         prefs.setString('lastActiveDate', todayStr);
       });
-      _saveToDisk();
+      _requestSave();
       
-      // Schedule notifyListeners so we don't break during build phase
       Future.microtask(() => notifyListeners());
     }
   }
@@ -141,8 +159,6 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
       shouldResetGrid = true;
     }
-    _lastActiveDateStr = todayStr;
-    await prefs.setString('lastActiveDate', todayStr);
 
     // Load customers
     final custJson = prefs.getString('customers');
@@ -203,6 +219,10 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     // Load grid data (or reset if it's a new day)
     final gridJson = prefs.getString('gridData');
     if (shouldResetGrid) {
+      if (gridJson != null) {
+        // Archive previous grid before clearing
+        await prefs.setString('archivedGrid_$_lastActiveDateStr', gridJson);
+      }
       _gridData = {};
     } else if (gridJson != null) {
       final Map<String, dynamic> outer = jsonDecode(gridJson);
@@ -225,6 +245,21 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
       };
     }
 
+    _lastActiveDateStr = todayStr;
+    await prefs.setString('lastActiveDate', todayStr);
+
+    // Load morning stock
+    final stockJson = prefs.getString('morningStock');
+    if (shouldResetGrid) {
+      if (stockJson != null) {
+        await prefs.setString('archivedMorningStock_$_lastActiveDateStr', stockJson);
+      }
+      _morningStock = {};
+    } else if (stockJson != null) {
+      final Map<String, dynamic> map = jsonDecode(stockJson);
+      _morningStock = map.map((k, v) => MapEntry(k, (v as num).toInt()));
+    }
+
     // Load transactions
     final txJson = prefs.getString('transactions');
     if (txJson != null) {
@@ -242,6 +277,23 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void _requestSave() {
+    if (_isSaving) {
+      _hasPendingSave = true;
+      return;
+    }
+    _isSaving = true;
+    _saveToDisk().then((_) {
+      _isSaving = false;
+      if (_hasPendingSave) {
+        _hasPendingSave = false;
+        _requestSave();
+      }
+    }).catchError((_) {
+      _isSaving = false;
+    });
+  }
+
   Future<void> _saveToDisk() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('customers', jsonEncode(_customers.map((c) => c.toJson()).toList()));
@@ -253,6 +305,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     await prefs.setString('gridData', jsonEncode(
       _gridData.map((custId, inner) => MapEntry(custId, inner.map((itemId, cell) => MapEntry(itemId, cell.toJson()))))
     ));
+    await prefs.setString('morningStock', jsonEncode(_morningStock));
     await prefs.setString('transactions', jsonEncode(_transactions.map((t) => t.toJson()).toList()));
     await prefs.setString('calcHistory', jsonEncode(_history));
   }
@@ -263,6 +316,52 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   List<Item> get items => _items;
   List<String> get history => _history;
   List<TransactionRecord> get transactions => _transactions;
+  Map<String, int> get morningStock => _morningStock;
+
+  int getMorningStock(String itemId) => _morningStock[itemId] ?? 0;
+
+  void updateMorningStock(String itemId, int qty) {
+    _morningStock[itemId] = qty;
+    notifyListeners();
+    _requestSave();
+  }
+
+  void setMorningStock(Map<String, int> stock) {
+    _morningStock = Map.from(stock);
+    notifyListeners();
+    _requestSave();
+  }
+
+  int getTotalDelivered(String itemId) {
+    _ensureCurrentDateSync();
+    int sum = 0;
+    for (var c in _customers) {
+      final cell = _gridData[c.id]?[itemId];
+      if (cell != null) {
+        sum += cell.delivered;
+      }
+    }
+    return sum;
+  }
+
+  int getTotalReturned(String itemId) {
+    _ensureCurrentDateSync();
+    int sum = 0;
+    for (var c in _customers) {
+      final cell = _gridData[c.id]?[itemId];
+      if (cell != null) {
+        sum += cell.returned;
+      }
+    }
+    return sum;
+  }
+
+  int getRemainingStock(String itemId) {
+    final loaded = getMorningStock(itemId);
+    final delivered = getTotalDelivered(itemId);
+    final returned = getTotalReturned(itemId);
+    return loaded - delivered + returned;
+  }
 
   // ===================== GRID & RATES =====================
 
@@ -283,7 +382,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   void updateUniversalRate(String itemId, double newRate) {
     _universalRates[itemId] = newRate;
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void updateCustomRate(String customerId, String itemId, double newRate) {
@@ -292,7 +391,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     }
     _customRates[customerId]![itemId] = newRate;
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   double getRowTotal(String customerId) {
@@ -304,7 +403,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
         total += (cell.delivered - cell.returned) * rate;
       });
     }
-    return total;
+    return double.parse(total.toStringAsFixed(2));
   }
 
   double get grandTotal {
@@ -312,7 +411,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     for (var c in _customers) {
       sum += getRowTotal(c.id);
     }
-    return sum;
+    return double.parse(sum.toStringAsFixed(2));
   }
 
   void updateCell(String customerId, String itemId, int load, int returnQty) {
@@ -325,18 +424,19 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     final cust = _customers.firstWhere((c) => c.id == customerId, orElse: () => Customer(id: customerId, name: 'Unknown'));
     final item = _items.firstWhere((i) => i.id == itemId, orElse: () => Item(id: itemId, name: 'Unknown'));
     final rate = getRate(customerId, itemId);
+    final calculatedTotal = double.parse(((load - returnQty) * rate).toStringAsFixed(2));
     
     _transactions.insert(0, TransactionRecord(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       customerId: customerId, customerName: cust.name,
       itemId: itemId, itemName: item.name,
       delivered: load, returned: returnQty,
-      rate: rate, total: (load - returnQty) * rate,
+      rate: rate, total: calculatedTotal,
       date: DateTime.now(),
     ));
 
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void updateCustomerGrid({
@@ -367,6 +467,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
 
       if (newLoad != oldLoad || newRet != oldRet) {
         final rate = getRate(customerId, item.id);
+        final calculatedTotal = double.parse(((newLoad - newRet) * rate).toStringAsFixed(2));
         _transactions.insert(0, TransactionRecord(
           id: '${now.millisecondsSinceEpoch}_${item.id}',
           customerId: customerId,
@@ -376,30 +477,30 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
           delivered: newLoad,
           returned: newRet,
           rate: rate,
-          total: (newLoad - newRet) * rate,
+          total: calculatedTotal,
           date: now,
         ));
       }
     }
 
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   // ===================== CRUD =====================
 
   void addCustomer(String name) {
-    _customers.add(Customer(id: 'c_${DateTime.now().millisecondsSinceEpoch}', name: name));
+    _customers.add(Customer(id: 'c_${DateTime.now().millisecondsSinceEpoch}', name: name.trim()));
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void editCustomer(String id, String newName) {
     final idx = _customers.indexWhere((c) => c.id == id);
     if (idx != -1) { 
-      _customers[idx].name = newName; 
+      _customers[idx].name = newName.trim(); 
       notifyListeners();
-      _saveToDisk();
+      _requestSave();
     }
   }
 
@@ -409,7 +510,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     _customRates.remove(id);
     _transactions.removeWhere((t) => t.customerId == id);
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void reorderCustomers(int oldIndex, int newIndex) {
@@ -417,46 +518,48 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     final item = _customers.removeAt(oldIndex);
     _customers.insert(newIndex, item);
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void addItem(String name) {
+    final trimmedName = name.trim();
     final newId = 'i_${DateTime.now().millisecondsSinceEpoch}';
-    _items.add(Item(id: newId, name: name));
+    _items.add(Item(id: newId, name: trimmedName));
     _universalRates[newId] = 0.0;
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void editItem(String id, String newName) {
     final idx = _items.indexWhere((i) => i.id == id);
     if (idx != -1) { 
-      _items[idx].name = newName; 
+      _items[idx].name = newName.trim(); 
       notifyListeners();
-      _saveToDisk();
+      _requestSave();
     }
   }
 
   void deleteItem(String id) {
     _items.removeWhere((i) => i.id == id);
     _universalRates.remove(id);
+    _morningStock.remove(id);
     _gridData.forEach((_, cellMap) => cellMap.remove(id));
     _customRates.forEach((_, rateMap) => rateMap.remove(id));
     _transactions.removeWhere((t) => t.itemId == id);
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void deleteTransaction(String txId) {
     _transactions.removeWhere((t) => t.id == txId);
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 
   void addHistory(String record) {
     _history.insert(0, record);
     notifyListeners();
-    _saveToDisk();
+    _requestSave();
   }
 }
 
@@ -464,9 +567,23 @@ class LocaleProvider with ChangeNotifier {
   bool _isNepali = true;
   bool get isNepali => _isNepali;
 
-  void toggleLanguage() {
+  LocaleProvider() {
+    _loadFromDisk();
+  }
+
+  Future<void> _loadFromDisk() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('isNepali')) {
+      _isNepali = prefs.getBool('isNepali') ?? true;
+      notifyListeners();
+    }
+  }
+
+  void toggleLanguage() async {
     _isNepali = !_isNepali;
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isNepali', _isNepali);
   }
 
   String get home => _isNepali ? 'होम' : 'Home';
@@ -491,10 +608,34 @@ class LocaleProvider with ChangeNotifier {
   
   String get noHistory => _isNepali ? 'कुनै इतिहास छैन' : 'No history found';
   String get noCustomers => _isNepali ? 'कुनै ग्राहक छैन' : 'No customers found';
+  String get noItems => _isNepali ? 'कुनै वस्तु छैन' : 'No items found';
 
   String get load => _isNepali ? 'दिएको (Load)' : 'Load';
   String get returnItem => _isNepali ? 'फिर्ता (Return)' : 'Return';
   String get save => _isNepali ? 'बचत गर्नुहोस्' : 'Save';
   String get cancel => _isNepali ? 'रद्द गर्नुहोस्' : 'Cancel';
   String get updateFor => _isNepali ? 'अपडेट गर्नुहोस्' : 'Update for';
+
+  String get addPerson => _isNepali ? 'व्यक्ति थप्नुहोस्' : 'Add Person';
+  String get editPerson => _isNepali ? 'व्यक्ति सम्पादन गर्नुहोस्' : 'Edit Person';
+  String get addItem => _isNepali ? 'सामान थप्नुहोस्' : 'Add Item';
+  String get editItem => _isNepali ? 'सामान सम्पादन गर्नुहोस्' : 'Edit Item';
+  String get universalRates => _isNepali ? 'सबैका लागि दर' : 'Universal Rates';
+  String get customRates => _isNepali ? 'विशेष दर' : 'Custom Rates';
+
+  String get delete => _isNepali ? 'हटाउनुहोस्' : 'Delete';
+  String get deleteConfirmTitle => _isNepali ? 'हटाउने पुष्टि' : 'Confirm Delete';
+  String get deleteConfirmMessage => _isNepali ? 'के तपाईं पक्का हटाउन चाहनुहुन्छ?' : 'Are you sure you want to delete this?';
+
+  String get morningStock => _isNepali ? 'गाडी लोड' : 'Vehicle Stock';
+  String get setMorningStock => _isNepali ? 'गाडी लोड प्रविष्टि' : 'Set Vehicle Stock';
+  String get editVehicleStock => _isNepali ? 'गाडी लोड मिलाउनुहोस्' : 'Edit Vehicle Stock';
+  String get loaded => _isNepali ? 'लोड' : 'Loaded';
+  String get remaining => _isNepali ? 'बाँकी' : 'Remaining';
+  String get dropped => _isNepali ? 'कुल दिएको' : 'Total Dropped';
+  String get share => _isNepali ? 'सेयर' : 'Share';
+  String get shareBill => _isNepali ? 'बिल सेयर गर्नुहोस्' : 'Share Bill';
+  String get noRecordsToShare => _isNepali ? 'सेयर गर्न कुनै रेकर्ड छैन' : 'No records to share';
+  String get delivered => _isNepali ? 'दिएको' : 'Delivered';
+  String get totalAmount => _isNepali ? 'कुल रकम' : 'Total Amount';
 }

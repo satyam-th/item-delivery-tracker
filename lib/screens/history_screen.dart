@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants/app_colors.dart';
 import '../providers.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -13,6 +15,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _selectedCustomer = 'All';
   String _selectedItem = 'All';
   DateTime? _selectedDate = DateTime.now();
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   Color _getAvatarColor(int index) {
     List<Color> colors = [
@@ -33,12 +43,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
+      lastDate: DateTime(2100),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF138D5B),
+              primary: AppColors.primaryGreen,
               onPrimary: Colors.white,
             ),
           ),
@@ -53,6 +63,72 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  void _confirmDeleteTx(BuildContext context, String txId) {
+    final locale = Provider.of<LocaleProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(locale.deleteConfirmTitle),
+        content: Text(locale.deleteConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(locale.cancel),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.returnRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Provider.of<DataProvider>(context, listen: false).deleteTransaction(txId);
+              Navigator.pop(ctx);
+            },
+            child: Text(locale.delete),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _shareFilteredBill(BuildContext context, List<TransactionRecord> records, double totalAmount) {
+    if (records.isEmpty) return;
+
+    final dateStr = _selectedDate != null ? _formatDate(_selectedDate!) : 'All Dates';
+    final customerTitle = _selectedCustomer != 'All'
+        ? records.first.customerName
+        : (_searchQuery.isNotEmpty ? _searchQuery : 'All Persons');
+
+    final buffer = StringBuffer();
+    buffer.writeln('📦 Shop Delivery Record (डेलिभरी हिसाब)');
+    buffer.writeln('📅 Date: $dateStr');
+    if (_selectedCustomer != 'All' || _searchQuery.isNotEmpty) {
+      buffer.writeln('👤 Filter: $customerTitle');
+    }
+    buffer.writeln('----------------------------------------');
+
+    for (var i = 0; i < records.length; i++) {
+      final tx = records[i];
+      final net = tx.delivered - tx.returned;
+      if (_selectedCustomer == 'All') {
+        buffer.writeln('${i + 1}. ${tx.customerName} - ${tx.itemName}');
+      } else {
+        buffer.writeln('${i + 1}. ${tx.itemName}');
+      }
+      buffer.writeln('   Del: ${tx.delivered} | Ret: ${tx.returned} | Net: $net @ Rs. ${tx.rate.toStringAsFixed(2)}');
+      buffer.writeln('   Subtotal: Rs. ${tx.total.toStringAsFixed(2)}');
+    }
+
+    buffer.writeln('----------------------------------------');
+    buffer.writeln('💰 Grand Total: Rs. ${totalAmount.toStringAsFixed(2)}');
+    buffer.writeln('🙏 Thank you!');
+
+    Share.share(
+      buffer.toString(),
+      subject: 'Delivery Bill - $customerTitle ($dateStr)',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<LocaleProvider>(context);
@@ -62,7 +138,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       appBar: AppBar(
         title: Text(locale.history),
         centerTitle: true,
-        backgroundColor: const Color(0xFF0F2027),
+        backgroundColor: AppColors.darkNavy,
+        foregroundColor: Colors.white,
       ),
       body: Consumer<DataProvider>(
         builder: (context, data, child) {
@@ -74,8 +151,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 (tx.date.year == _selectedDate!.year && 
                  tx.date.month == _selectedDate!.month && 
                  tx.date.day == _selectedDate!.day);
-            return matchesCust && matchesItem && matchesDate;
+            bool matchesSearch = _searchQuery.isEmpty ||
+                tx.customerName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                tx.itemName.toLowerCase().contains(_searchQuery.toLowerCase());
+            return matchesCust && matchesItem && matchesDate && matchesSearch;
           }).toList();
+
+          final filteredTotal = txs.fold(0.0, (sum, tx) => sum + tx.total);
+          final filteredCount = txs.length;
 
           return Column(
             children: [
@@ -91,7 +174,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF9F9F9),
+                          color: AppColors.greyCard,
                           border: Border.all(color: Colors.black12),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -100,7 +183,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.calendar_today, size: 18, color: Color(0xFF138D5B)),
+                                const Icon(Icons.calendar_today, size: 18, color: AppColors.primaryGreen),
                                 const SizedBox(width: 8),
                                 Text(
                                   _selectedDate == null ? 'All Dates (सबै मिति)' : _formatDate(_selectedDate!),
@@ -127,7 +210,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF9F9F9),
+                              color: AppColors.greyCard,
                               border: Border.all(color: Colors.black12),
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -151,7 +234,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF9F9F9),
+                              color: AppColors.greyCard,
                               border: Border.all(color: Colors.black12),
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -171,6 +254,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Search Bar
+                    TextField(
+                      controller: _searchCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'Search customer or item (खोज्नुहोस्)...',
+                        hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
+                        prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: AppColors.greyCard,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Colors.black12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Colors.black12),
+                        ),
+                      ),
+                      onChanged: (val) => setState(() => _searchQuery = val.trim()),
                     ),
                   ],
                 ),
@@ -227,14 +342,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           children: [
                                             Text('Load: ${tx.delivered}', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500, fontSize: 13)),
                                             const SizedBox(width: 12),
-                                            Text('Return: ${tx.returned}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500, fontSize: 13)),
+                                            Text('Return: ${tx.returned}', style: const TextStyle(color: AppColors.returnRed, fontWeight: FontWeight.w500, fontSize: 13)),
                                           ],
                                         ),
                                         const SizedBox(height: 8),
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text('Net: ${tx.delivered - tx.returned}', style: const TextStyle(color: Color(0xFF138D5B), fontWeight: FontWeight.bold, fontSize: 13)),
+                                            Text('Net: ${tx.delivered - tx.returned}', style: const TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
                                             Text('${tx.date.hour}:${tx.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                                           ],
                                         ),
@@ -248,18 +363,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFE5F4EC),
+                                          color: AppColors.lightGreenBadge,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           'Rs. ${tx.total.toStringAsFixed(2)}',
-                                          style: const TextStyle(color: Color(0xFF138D5B), fontWeight: FontWeight.bold, fontSize: 12),
+                                          style: const TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold, fontSize: 12),
                                         ),
                                       ),
                                       const SizedBox(height: 8),
                                       IconButton(
                                         icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                        onPressed: () => data.deleteTransaction(tx.id),
+                                        onPressed: () => _confirmDeleteTx(context, tx.id),
                                       )
                                     ],
                                   )
@@ -269,6 +384,66 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           );
                         },
                       ),
+              ),
+              // Bottom Action Bar for Share
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      offset: const Offset(0, -2),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      // Filtered summary details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$filteredCount ${filteredCount == 1 ? "record" : "records"}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            Text(
+                              'Rs. ${filteredTotal.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primaryGreen,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Share Button
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryGreen,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 1,
+                        ),
+                        onPressed: txs.isEmpty ? null : () => _shareFilteredBill(context, txs, filteredTotal),
+                        icon: const Icon(Icons.share, size: 18),
+                        label: Text(
+                          locale.shareBill,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           );

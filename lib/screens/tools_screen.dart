@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:math_expressions/math_expressions.dart';
+import '../constants/app_colors.dart';
 import '../providers.dart';
 
 class ToolsScreen extends StatefulWidget {
@@ -47,10 +48,11 @@ class _ToolsScreenState extends State<ToolsScreen> {
     try {
       // Replace symbols for the parser
       String parseExpr = _expression.replaceAll('x', '*').replaceAll('÷', '/');
-      Parser p = Parser();
+      ShuntingYardParser p = ShuntingYardParser();
       Expression exp = p.parse(parseExpr);
-      ContextModel cm = ContextModel();
-      double eval = exp.evaluate(EvaluationType.REAL, cm);
+      final cm = ContextModel();
+      final evaluator = RealEvaluator(cm);
+      final num eval = evaluator.evaluate(exp);
       
       // Remove trailing .0
       String res = eval.toString();
@@ -100,7 +102,8 @@ class _ToolsScreenState extends State<ToolsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(locale.tools),
-        backgroundColor: const Color(0xFF0F2027),
+        backgroundColor: AppColors.darkNavy,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.history),
@@ -119,19 +122,19 @@ class _ToolsScreenState extends State<ToolsScreen> {
                         return ListView.separated(
                           shrinkWrap: true,
                           itemCount: data.history.length,
-                          separatorBuilder: (_, __) => const Divider(),
-                          itemBuilder: (_, i) => Text(data.history[i], style: const TextStyle(fontSize: 18)),
+                          separatorBuilder: (context, index) => const Divider(),
+                          itemBuilder: (context, i) => Text(data.history[i], style: const TextStyle(fontSize: 18)),
                         );
-                      }
-                    )
+                      },
+                    ),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('OK', style: TextStyle(color: Color(0xFF138D5B))),
+                      child: const Text('OK', style: TextStyle(color: AppColors.primaryGreen)),
                     )
-                  ]
-                )
+                  ],
+                ),
               );
             },
           )
@@ -157,7 +160,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                   const SizedBox(height: 10),
                   Text(
                     _liveResult.isNotEmpty ? '= $_liveResult' : '',
-                    style: const TextStyle(fontSize: 24, color: Colors.green),
+                    style: const TextStyle(fontSize: 24, color: AppColors.primaryGreen),
                   ),
                 ],
               ),
@@ -168,17 +171,17 @@ class _ToolsScreenState extends State<ToolsScreen> {
           Expanded(
             flex: 2,
             child: Container(
-              color: const Color(0xFFF9F9F9),
+              color: AppColors.greyCard,
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   Expanded(
                     child: Row(
                       children: [
-                        _buildButton('C', textColor: Colors.red),
-                        _buildButton('DEL', textColor: Colors.red),
-                        _buildButton('%', textColor: Colors.green),
-                        _buildButton('÷', textColor: Colors.green),
+                        _buildButton('C', textColor: AppColors.returnRed),
+                        _buildButton('DEL', textColor: AppColors.returnRed),
+                        _buildButton('%', textColor: AppColors.primaryGreen),
+                        _buildButton('÷', textColor: AppColors.primaryGreen),
                       ],
                     ),
                   ),
@@ -188,7 +191,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                         _buildButton('7'),
                         _buildButton('8'),
                         _buildButton('9'),
-                        _buildButton('x', textColor: Colors.green),
+                        _buildButton('x', textColor: AppColors.primaryGreen),
                       ],
                     ),
                   ),
@@ -198,7 +201,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                         _buildButton('4'),
                         _buildButton('5'),
                         _buildButton('6'),
-                        _buildButton('-', textColor: Colors.green),
+                        _buildButton('-', textColor: AppColors.primaryGreen),
                       ],
                     ),
                   ),
@@ -208,7 +211,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                         _buildButton('1'),
                         _buildButton('2'),
                         _buildButton('3'),
-                        _buildButton('+', textColor: Colors.green),
+                        _buildButton('+', textColor: AppColors.primaryGreen),
                       ],
                     ),
                   ),
@@ -218,7 +221,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                         _buildButton('00'),
                         _buildButton('0'),
                         _buildButton('.'),
-                        _buildButton('=', bgColor: Colors.green, textColor: Colors.white),
+                        _buildButton('=', bgColor: AppColors.primaryGreen, textColor: Colors.white),
                       ],
                     ),
                   ),
@@ -231,4 +234,3 @@ class _ToolsScreenState extends State<ToolsScreen> {
     );
   }
 }
-

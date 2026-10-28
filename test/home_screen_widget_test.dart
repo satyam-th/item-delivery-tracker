@@ -61,4 +61,27 @@ void main() {
     // Bottom sheet is dismissed
     expect(find.byType(CustomerLoadReturnSheet), findsNothing);
   });
+
+  testWidgets('Top vehicle stock bar renders and opens edit stock dialog', (tester) async {
+    await tester.pumpWidget(createTestWidget());
+    await tester.pumpAndSettle();
+
+    // Verify Morning Stock header exists
+    expect(find.text('गाडी लोड'), findsOneWidget);
+    expect(find.text('गाडी लोड मिलाउनुहोस्'), findsOneWidget);
+
+    // Tap 'गाडी लोड मिलाउनुहोस्' to open dialog
+    await tester.tap(find.text('गाडी लोड मिलाउनुहोस्'));
+    await tester.pumpAndSettle();
+
+    // Verify dialog opened
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('बचत गर्नुहोस्'), findsOneWidget);
+
+    // Tap Cancel
+    await tester.tap(find.text('रद्द गर्नुहोस्'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+  });
 }

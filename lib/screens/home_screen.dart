@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants/app_colors.dart';
 import '../providers.dart';
 import 'manage_customers_screen.dart';
 
@@ -18,7 +19,7 @@ class HomeScreen extends StatelessWidget {
     final locale = Provider.of<LocaleProvider>(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F2027),
+      backgroundColor: AppColors.darkNavy,
       appBar: AppBar(
         title: const Text(
           'Item',
@@ -39,6 +40,7 @@ class HomeScreen extends StatelessWidget {
       body: Column(
         children: [
           _buildSummaryHeader(locale),
+          _buildTopStockBar(context, locale),
           Expanded(
             child: Container(
               color: Colors.white,
@@ -65,7 +67,7 @@ class HomeScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF138D5B),
+                  color: AppColors.primaryGreen,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -80,6 +82,207 @@ class HomeScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTopStockBar(BuildContext context, LocaleProvider locale) {
+    return Consumer<DataProvider>(
+      builder: (context, data, child) {
+        final items = data.items;
+        if (items.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          width: double.infinity,
+          color: AppColors.darkNavy,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.local_shipping_outlined, color: Colors.white70, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        locale.morningStock,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: () => _showMorningStockDialog(context, data, locale),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit, color: AppColors.primaryGreen, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            locale.editVehicleStock,
+                            style: const TextStyle(
+                              color: AppColors.primaryGreen,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 84,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final loaded = data.getMorningStock(item.id);
+                    final remaining = data.getRemainingStock(item.id);
+                    final isNegative = remaining < 0;
+
+                    return Container(
+                      width: 110,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isNegative
+                              ? Colors.redAccent.withValues(alpha: 0.6)
+                              : Colors.white12,
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${locale.loaded}: $loaded',
+                            style: const TextStyle(color: Colors.white70, fontSize: 10),
+                          ),
+                          Text(
+                            '${locale.remaining}: $remaining',
+                            style: TextStyle(
+                              color: isNegative ? Colors.redAccent : AppColors.primaryGreen,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showMorningStockDialog(BuildContext context, DataProvider data, LocaleProvider locale) {
+    final controllers = <String, TextEditingController>{};
+    for (var item in data.items) {
+      final current = data.getMorningStock(item.id);
+      controllers[item.id] = TextEditingController(text: current == 0 ? '' : current.toString());
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.local_shipping, color: AppColors.primaryGreen),
+            const SizedBox(width: 8),
+            Text(locale.editVehicleStock),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: data.items.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          item.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: controllers[item.id],
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            hintText: '0',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(locale.cancel),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              final newStock = <String, int>{};
+              controllers.forEach((itemId, ctrl) {
+                final val = int.tryParse(ctrl.text.trim()) ?? 0;
+                newStock[itemId] = val < 0 ? 0 : val;
+              });
+              data.setMorningStock(newStock);
+              Navigator.pop(ctx);
+            },
+            child: Text(locale.save),
+          ),
+        ],
+      ),
     );
   }
 
@@ -105,7 +308,7 @@ class HomeScreen extends StatelessWidget {
                       height: 40,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
-                        color: Color(0xFF1B3B36),
+                        color: AppColors.headerGreen,
                         border: Border(
                           right: BorderSide(color: Colors.white24, width: 0.5),
                           bottom: BorderSide(color: Colors.white24, width: 0.5),
@@ -124,9 +327,9 @@ class HomeScreen extends StatelessWidget {
                       final idx = entry.key;
                       final cust = entry.value;
                       return _buildCustomerCell(context, cust, idx);
-                    }).toList(),
-                    // Bottom Total Row Label
-                    _buildCustomerCell(context, Customer(id: 'total', name: locale.grandTotal), customers.length, isTotalRow: true),
+                    }),
+                    // Bottom Total Row Label (Total Dropped)
+                    _buildCustomerCell(context, Customer(id: 'total', name: '${locale.dropped}\n(${locale.grandTotal})'), customers.length, isTotalRow: true),
                   ],
                 ),
               ),
@@ -140,7 +343,7 @@ class HomeScreen extends StatelessWidget {
                       // Header Row
                       Row(
                         children: [
-                          ...items.map((item) => _buildHeaderCell(item.name)).toList(),
+                          ...items.map((item) => _buildHeaderCell(item.name)),
                           _buildHeaderCell(locale.total),
                         ],
                       ),
@@ -153,11 +356,11 @@ class HomeScreen extends StatelessWidget {
                             ...items.map((item) {
                               final cellData = data.getCellData(cust.id, item.id);
                               return _buildDataCell(context, cust, item, cellData, idx);
-                            }).toList(),
+                            }),
                             _buildTotalCell(data.getRowTotal(cust.id), idx),
                           ],
                         );
-                      }).toList(),
+                      }),
                       // Bottom Total Row Values
                       Row(
                         children: [
@@ -176,7 +379,7 @@ class HomeScreen extends StatelessWidget {
                                customers.length, 
                                isTotalRow: true
                              );
-                          }).toList(),
+                          }),
                           // Grand Total Sum
                           _buildTotalCell(
                             data.grandTotal, 
@@ -202,7 +405,7 @@ class HomeScreen extends StatelessWidget {
       height: 40,
       alignment: Alignment.center,
       decoration: const BoxDecoration(
-        color: Color(0xFF1B3B36),
+        color: AppColors.headerGreen,
         border: Border(
           right: BorderSide(color: Colors.white24, width: 0.5),
           bottom: BorderSide(color: Colors.white24, width: 0.5),
@@ -221,8 +424,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildCustomerCell(BuildContext context, Customer cust, int index, {bool isTotalRow = false}) {
-    Color bgColor = index % 2 == 0 ? Colors.white : const Color(0xFFE3F2FD);
-    if (isTotalRow) bgColor = const Color(0xFFB3E5FC);
+    Color bgColor = index % 2 == 0 ? Colors.white : AppColors.alternateRow;
+    if (isTotalRow) bgColor = AppColors.totalRow;
 
     final displayName = cust.name;
 
@@ -317,14 +520,14 @@ class HomeScreen extends StatelessWidget {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF138D5B),
+              backgroundColor: AppColors.primaryGreen,
               foregroundColor: Colors.white,
             ),
             onPressed: () {
               final dp = Provider.of<DataProvider>(context, listen: false);
               final load = int.tryParse(loadCtrl.text) ?? 0;
               final ret = int.tryParse(returnCtrl.text) ?? 0;
-              dp.updateCell(cust.id, item.id, load, ret);
+              dp.updateCell(cust.id, item.id, load < 0 ? 0 : load, ret < 0 ? 0 : ret);
               Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -335,8 +538,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildDataCell(BuildContext context, Customer cust, Item item, CellData data, int index, {bool isTotalRow = false}) {
-    Color bgColor = index % 2 == 0 ? Colors.white : const Color(0xFFE3F2FD);
-    if (isTotalRow) bgColor = const Color(0xFFB3E5FC);
+    Color bgColor = index % 2 == 0 ? Colors.white : AppColors.alternateRow;
+    if (isTotalRow) bgColor = AppColors.totalRow;
 
     return InkWell(
       onTap: isTotalRow ? null : () => _showCellEditDialog(context, cust, item, data),
@@ -356,7 +559,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             Text(
               '${data.delivered}',
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.black87, 
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
@@ -365,7 +568,7 @@ class HomeScreen extends StatelessWidget {
             Text(
               '-${data.returned}',
               style: TextStyle(
-                color: Colors.red, 
+                color: AppColors.returnRed, 
                 fontSize: 12,
                 fontWeight: isTotalRow ? FontWeight.bold : FontWeight.normal,
               ),
@@ -377,8 +580,8 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildTotalCell(double total, int index, {bool isTotalRow = false}) {
-    Color bgColor = index % 2 == 0 ? Colors.white : const Color(0xFFE3F2FD);
-    if (isTotalRow) bgColor = const Color(0xFFB3E5FC);
+    Color bgColor = index % 2 == 0 ? Colors.white : AppColors.alternateRow;
+    if (isTotalRow) bgColor = AppColors.totalRow;
 
     return Container(
       width: 80,
@@ -393,7 +596,7 @@ class HomeScreen extends StatelessWidget {
       ),
       child: Text(
         total.toStringAsFixed(0),
-        style: TextStyle(
+        style: const TextStyle(
           color: Colors.black87, 
           fontSize: 13,
           fontWeight: FontWeight.bold,
@@ -484,7 +687,7 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
               ? '${widget.customer.name} को रेकर्ड सुरक्षित भयो'
               : 'Records saved for ${widget.customer.name}',
         ),
-        backgroundColor: const Color(0xFF138D5B),
+        backgroundColor: AppColors.primaryGreen,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -504,7 +707,7 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
     }
 
     final isLoad = _activeTab == 0;
-    final themeColor = isLoad ? const Color(0xFF138D5B) : const Color(0xFFD32F2F);
+    final themeColor = isLoad ? AppColors.primaryGreen : AppColors.returnRed;
 
     return Container(
       decoration: const BoxDecoration(
@@ -540,8 +743,8 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: const Color(0xFF138D5B).withOpacity(0.15),
-                    child: const Icon(Icons.person, color: Color(0xFF138D5B), size: 22),
+                    backgroundColor: AppColors.primaryGreen.withValues(alpha: 0.15),
+                    child: const Icon(Icons.person, color: AppColors.primaryGreen, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -601,13 +804,13 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
                             color: _activeTab == 0
-                                ? const Color(0xFF138D5B)
+                                ? AppColors.primaryGreen
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(10),
                             boxShadow: _activeTab == 0
                                 ? [
                                     BoxShadow(
-                                      color: const Color(0xFF138D5B).withOpacity(0.3),
+                                      color: AppColors.primaryGreen.withValues(alpha: 0.3),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     )
@@ -665,13 +868,13 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
                             color: _activeTab == 1
-                                ? const Color(0xFFD32F2F)
+                                ? AppColors.returnRed
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(10),
                             boxShadow: _activeTab == 1
                                 ? [
                                     BoxShadow(
-                                      color: const Color(0xFFD32F2F).withOpacity(0.3),
+                                      color: AppColors.returnRed.withValues(alpha: 0.3),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     )
@@ -812,7 +1015,7 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
                                   contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                                   hintText: '0',
                                   filled: true,
-                                  fillColor: themeColor.withOpacity(0.06),
+                                  fillColor: themeColor.withValues(alpha: 0.06),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(
@@ -875,7 +1078,7 @@ class _CustomerLoadReturnSheetState extends State<CustomerLoadReturnSheet> {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF138D5B),
+                    backgroundColor: AppColors.primaryGreen,
                     elevation: 2,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

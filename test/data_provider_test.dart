@@ -6,18 +6,31 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('LocaleProvider Tests', () {
-    test('Initial language is Nepali and toggles to English', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('Initial language is Nepali and toggles to English and persists', () async {
       final locale = LocaleProvider();
+      await Future.delayed(const Duration(milliseconds: 20));
+
       expect(locale.isNepali, true);
       expect(locale.home, 'होम');
       expect(locale.todayTotal, 'आजको कुल जम्मा');
 
       locale.toggleLanguage();
+      await Future.delayed(const Duration(milliseconds: 20));
+
       expect(locale.isNepali, false);
       expect(locale.home, 'Home');
       expect(locale.todayTotal, "Today's Total");
       expect(locale.load, 'Load');
       expect(locale.returnItem, 'Return');
+
+      // Verify persistence by initializing another LocaleProvider instance
+      final secondLocale = LocaleProvider();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(secondLocale.isNepali, false);
     });
   });
 
@@ -97,20 +110,20 @@ void main() {
       expect(dp.transactions.length, greaterThan(prevTxCount));
     });
 
-    test('Customer CRUD: add, edit, reorder, and delete', () async {
+    test('Customer CRUD: add, edit, reorder, and delete with trimming', () async {
       final dp = DataProvider();
       await Future.delayed(const Duration(milliseconds: 50));
 
       final initialCount = dp.customers.length;
 
-      // Add
-      dp.addCustomer('नयाँ ग्राहक');
+      // Add with whitespace to test trimming
+      dp.addCustomer('  नयाँ ग्राहक  ');
       expect(dp.customers.length, initialCount + 1);
       final newCust = dp.customers.last;
       expect(newCust.name, 'नयाँ ग्राहक');
 
-      // Edit
-      dp.editCustomer(newCust.id, 'अपडेट गरिएको ग्राहक');
+      // Edit with whitespace to test trimming
+      dp.editCustomer(newCust.id, '  अपडेट गरिएको ग्राहक  ');
       expect(dp.customers.last.name, 'अपडेट गरिएको ग्राहक');
 
       // Reorder
@@ -122,25 +135,72 @@ void main() {
       expect(dp.customers.length, initialCount);
     });
 
-    test('Item CRUD: add, edit, and delete', () async {
+    test('Item CRUD: add, edit, and delete with trimming', () async {
       final dp = DataProvider();
       await Future.delayed(const Duration(milliseconds: 50));
 
       final initialItemCount = dp.items.length;
 
-      // Add
-      dp.addItem('New Milk');
+      // Add with whitespace
+      dp.addItem('  New Milk  ');
       expect(dp.items.length, initialItemCount + 1);
       final newItem = dp.items.last;
       expect(newItem.name, 'New Milk');
 
-      // Edit
-      dp.editItem(newItem.id, 'Super Milk');
+      // Edit with whitespace
+      dp.editItem(newItem.id, '  Super Milk  ');
       expect(dp.items.last.name, 'Super Milk');
 
       // Delete
       dp.deleteItem(newItem.id);
       expect(dp.items.length, initialItemCount);
+    });
+
+    test('Transaction deletion works cleanly', () async {
+      final dp = DataProvider();
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      dp.updateCell('c1', 'i1', 15, 3);
+      final txCount = dp.transactions.length;
+      expect(txCount, greaterThan(0));
+
+      final txId = dp.transactions.first.id;
+      dp.deleteTransaction(txId);
+      expect(dp.transactions.length, txCount - 1);
+      expect(dp.transactions.any((t) => t.id == txId), false);
+    });
+
+    test('Morning vehicle stock and live remaining stock calculation', () async {
+      final dp = DataProvider();
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Initially 0 morning stock
+      expect(dp.getMorningStock('i1'), 0);
+
+      final totalDeliveredInitially = dp.getTotalDelivered('i1');
+      final totalReturnedInitially = dp.getTotalReturned('i1');
+
+      // Set vehicle stock: 1700 packets of i1 (Nilo) and 1300 of i2 (Hariyo)
+      dp.setMorningStock({'i1': 1700, 'i2': 1300});
+      expect(dp.getMorningStock('i1'), 1700);
+      expect(dp.getMorningStock('i2'), 1300);
+
+      // Remaining should be loaded - totalDelivered + totalReturned
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially);
+
+      // Customer c1 takes 10 additional packets
+      final c1Cell = dp.getCellData('c1', 'i1');
+      dp.updateCell('c1', 'i1', c1Cell.delivered + 10, c1Cell.returned);
+
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially - 10);
+
+      // Customer c1 returns 5 packets: remaining increases by 5
+      dp.updateCell('c1', 'i1', c1Cell.delivered + 10, c1Cell.returned + 5);
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially - 5);
+
+      // Deleting item cleans up morning stock
+      dp.deleteItem('i1');
+      expect(dp.getMorningStock('i1'), 0);
     });
   });
 }
