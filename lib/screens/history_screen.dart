@@ -98,7 +98,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  void _shareFilteredBill(BuildContext context, List<TransactionRecord> records, double totalAmount) {
+  void _shareFilteredBill(BuildContext context, List<TransactionRecord> records, double totalAmount, Map<String, int> damagedSummary, int totalDamagedCount) {
     if (records.isEmpty) return;
 
     final dateStr = _selectedDate != null ? _formatDate(_selectedDate!) : 'All Dates';
@@ -122,12 +122,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
       } else {
         buffer.writeln('${i + 1}. ${tx.itemName}');
       }
-      buffer.writeln('   Del: ${tx.delivered} | Ret: ${tx.returned} | Net: $net @ Rs. ${tx.rate.toStringAsFixed(2)}');
+      buffer.writeln('   Del: ${tx.delivered} | Damaged: ${tx.returned} | Net: $net @ Rs. ${tx.rate.toStringAsFixed(2)}');
       buffer.writeln('   Subtotal: Rs. ${tx.total.toStringAsFixed(2)}');
     }
 
     buffer.writeln('----------------------------------------');
     buffer.writeln('💰 Grand Total: Rs. ${totalAmount.toStringAsFixed(2)}');
+
+    if (totalDamagedCount > 0) {
+      buffer.writeln('----------------------------------------');
+      buffer.writeln('⚠️ Total Damaged (कुल नोक्सानी): $totalDamagedCount');
+      damagedSummary.forEach((itemName, count) {
+        buffer.writeln('   • $itemName: $count');
+      });
+    }
+
+    buffer.writeln('----------------------------------------');
     buffer.writeln('🙏 Thank you!');
 
     Share.share(
@@ -166,6 +176,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           final filteredTotal = txs.fold(0.0, (sum, tx) => sum + tx.total);
           final filteredCount = txs.length;
+
+          // Damaged summary calculation
+          final damagedSummary = <String, int>{};
+          int totalDamagedCount = 0;
+          for (var tx in txs) {
+            if (tx.returned > 0) {
+              damagedSummary[tx.itemName] = (damagedSummary[tx.itemName] ?? 0) + tx.returned;
+              totalDamagedCount += tx.returned;
+            }
+          }
 
           return Column(
             children: [
@@ -347,9 +367,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         const SizedBox(height: 8),
                                         Row(
                                           children: [
-                                            Text('Load: ${tx.delivered}', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500, fontSize: 13)),
+                                            Text('${locale.load}: ${tx.delivered}', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500, fontSize: 13)),
                                             const SizedBox(width: 12),
-                                            Text('Return: ${tx.returned}', style: const TextStyle(color: AppColors.returnRed, fontWeight: FontWeight.w500, fontSize: 13)),
+                                            Text('${locale.damaged}: ${tx.returned}', style: const TextStyle(color: AppColors.returnRed, fontWeight: FontWeight.w500, fontSize: 13)),
                                           ],
                                         ),
                                         const SizedBox(height: 8),
@@ -392,9 +412,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         },
                       ),
               ),
-              // Bottom Action Bar for Share
+              // Bottom Action Bar for Share and Damaged Summary
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
@@ -407,47 +426,105 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
                 child: SafeArea(
                   top: false,
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Filtered summary details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                      // Filtered summary row
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Row(
                           children: [
-                            Text(
-                              '$filteredCount ${filteredCount == 1 ? "record" : "records"}',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '$filteredCount ${filteredCount == 1 ? "record" : "records"}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                  Text(
+                                    'Rs. ${filteredTotal.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primaryGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            Text(
-                              'Rs. ${filteredTotal.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primaryGreen,
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryGreen,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 1,
+                              ),
+                              onPressed: txs.isEmpty ? null : () => _shareFilteredBill(context, txs, filteredTotal, damagedSummary, totalDamagedCount),
+                              icon: const Icon(Icons.share, size: 18),
+                              label: Text(
+                                locale.shareBill,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      // Share Button
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryGreen,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                      // Damaged items section (after total)
+                      if (totalDamagedCount > 0) ...[
+                        const Divider(height: 1, color: Colors.black12),
+                        Container(
+                          width: double.infinity,
+                          color: AppColors.returnRed.withValues(alpha: 0.05),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.warning_amber_rounded, color: AppColors.returnRed, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${locale.totalDamaged}: $totalDamagedCount',
+                                    style: const TextStyle(
+                                      color: AppColors.returnRed,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: damagedSummary.entries.map((entry) {
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppColors.returnRed.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '${entry.key}: ${entry.value}',
+                                      style: const TextStyle(
+                                        color: AppColors.returnRed,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
                           ),
-                          elevation: 1,
                         ),
-                        onPressed: txs.isEmpty ? null : () => _shareFilteredBill(context, txs, filteredTotal),
-                        icon: const Icon(Icons.share, size: 18),
-                        label: Text(
-                          locale.shareBill,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

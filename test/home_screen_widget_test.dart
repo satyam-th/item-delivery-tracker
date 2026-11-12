@@ -47,11 +47,11 @@ void main() {
     // Bottom sheet should be visible with customer name and Load/Return tabs
     expect(find.byType(CustomerLoadReturnSheet), findsOneWidget);
     expect(find.text('दिएको (Load)'), findsOneWidget);
-    expect(find.text('फिर्ता (Return)'), findsOneWidget);
+    expect(find.text('फिर्ता (Damaged)'), findsOneWidget);
     expect(find.text('बचत गर्नुहोस्'), findsOneWidget);
 
     // Switch to Return tab
-    await tester.tap(find.text('फिर्ता (Return)'));
+    await tester.tap(find.text('फिर्ता (Damaged)'));
     await tester.pumpAndSettle();
 
     // Tap Save button to close sheet

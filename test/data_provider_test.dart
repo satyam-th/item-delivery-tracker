@@ -25,7 +25,7 @@ void main() {
       expect(locale.home, 'Home');
       expect(locale.todayTotal, "Today's Total");
       expect(locale.load, 'Load');
-      expect(locale.returnItem, 'Return');
+      expect(locale.returnItem, 'Damaged (Return)');
 
       // Verify persistence by initializing another LocaleProvider instance
       final secondLocale = LocaleProvider();
@@ -185,18 +185,18 @@ void main() {
       expect(dp.getMorningStock('i1'), 1700);
       expect(dp.getMorningStock('i2'), 1300);
 
-      // Remaining should be loaded - totalDelivered + totalReturned
-      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially);
+      // Remaining should be loaded - totalDelivered (damaged/returned do not add back to vehicle stock)
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially);
 
       // Customer c1 takes 10 additional packets
       final c1Cell = dp.getCellData('c1', 'i1');
       dp.updateCell('c1', 'i1', c1Cell.delivered + 10, c1Cell.returned);
 
-      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially - 10);
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially - 10);
 
-      // Customer c1 returns 5 packets: remaining increases by 5
+      // Customer c1 has 5 damaged/returned packets: remaining vehicle stock stays same (damaged items aren't usable stock)
       dp.updateCell('c1', 'i1', c1Cell.delivered + 10, c1Cell.returned + 5);
-      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially + totalReturnedInitially - 5);
+      expect(dp.getRemainingStock('i1'), 1700 - totalDeliveredInitially - 10);
 
       // Deleting item cleans up morning stock
       dp.deleteItem('i1');

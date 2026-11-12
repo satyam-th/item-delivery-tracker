@@ -444,8 +444,7 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   int getRemainingStock(String itemId) {
     final loaded = getMorningStock(itemId);
     final delivered = getTotalDelivered(itemId);
-    final returned = getTotalReturned(itemId);
-    return loaded - delivered + returned;
+    return loaded - delivered;
   }
 
   // ===================== GRID & RATES =====================
@@ -731,7 +730,10 @@ class LocaleProvider with ChangeNotifier {
   String get noItems => _isNepali ? 'कुनै वस्तु छैन' : 'No items found';
 
   String get load => _isNepali ? 'दिएको (Load)' : 'Load';
-  String get returnItem => _isNepali ? 'फिर्ता (Return)' : 'Return';
+  String get returnItem => _isNepali ? 'फिर्ता (Damaged)' : 'Damaged (Return)';
+  String get damaged => _isNepali ? 'नोक्सानी' : 'Damaged';
+  String get totalDamaged => _isNepali ? 'कुल नोक्सानी' : 'Total Damaged';
+  String get damagedItems => _isNepali ? 'नोक्सानी सामान' : 'Damaged Items';
   String get save => _isNepali ? 'बचत गर्नुहोस्' : 'Save';
   String get cancel => _isNepali ? 'रद्द गर्नुहोस्' : 'Cancel';
   String get updateFor => _isNepali ? 'अपडेट गर्नुहोस्' : 'Update for';
