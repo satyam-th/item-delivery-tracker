@@ -105,6 +105,28 @@ void main() {
     expect(find.text('English (Active)'), findsOneWidget);
   });
 
+  testWidgets('SettingsScreen displays reset settings and manual reset options', (tester) async {
+    final dp = DataProvider();
+    final lp = LocaleProvider();
+    await tester.pumpWidget(wrapWithProviders(const SettingsScreen(), dp: dp, lp: lp));
+    await tester.pumpAndSettle();
+
+    expect(find.text('रिसेट सेटिङ'), findsOneWidget);
+    expect(find.text('ग्रिड रिसेट गर्नुहोस्'), findsOneWidget);
+
+    // Tap manual reset button to verify confirmation dialog
+    await tester.tap(find.text('ग्रिड रिसेट गर्नुहोस्'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('पुष्टि गर्नुहोस्'), findsOneWidget);
+
+    // Dismiss dialog
+    await tester.tap(find.text('रद्द गर्नुहोस्'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
   testWidgets('HistoryScreen renders filters, search bar, and bottom share action bar', (tester) async {
     final dp = DataProvider();
     await tester.pumpWidget(wrapWithProviders(const HistoryScreen(), dp: dp));

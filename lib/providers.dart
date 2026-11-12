@@ -86,6 +86,14 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   List<TransactionRecord> _transactions = [];
   List<String> _history = []; // calculator history
 
+  // Reset settings
+  String _resetMode = 'auto'; // 'auto' or 'manual'
+  int _resetHour = 0;   // 0-23 (default midnight)
+  int _resetMinute = 0;  // 0-59
+  String _resetFrequency = 'daily'; // 'daily', 'weekly', 'custom'
+  int _resetWeekday = 1; // 1=Mon .. 7=Sun (for weekly)
+  List<int> _resetCustomDays = []; // list of weekdays (for custom)
+
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded;
 
@@ -114,36 +122,97 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
 
   void _ensureCurrentDateSync() {
     if (!_isLoaded) return;
-    final todayStr = DateTime.now().toIso8601String().substring(0, 10); // Format: YYYY-MM-DD
+    // Skip auto-reset if mode is manual
+    if (_resetMode == 'manual') return;
+
+    final now = DateTime.now();
+    final todayStr = now.toIso8601String().substring(0, 10);
+
     if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
-      // It's a new day! Archive yesterday's grid data if it had active data
-      if (_gridData.isNotEmpty) {
-        SharedPreferences.getInstance().then((prefs) {
-          final yesterdayData = jsonEncode(
-            _gridData.map((custId, inner) => MapEntry(
-              custId,
-              inner.map((itemId, cell) => MapEntry(itemId, cell.toJson())),
-            )),
-          );
-          prefs.setString('archivedGrid_$_lastActiveDateStr', yesterdayData);
-        });
-      }
-      if (_morningStock.isNotEmpty) {
-        SharedPreferences.getInstance().then((prefs) {
-          prefs.setString('archivedMorningStock_$_lastActiveDateStr', jsonEncode(_morningStock));
-        });
-      }
-      _gridData.clear();
-      _morningStock.clear();
-      _lastActiveDateStr = todayStr;
-      
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.setString('lastActiveDate', todayStr);
-      });
-      _requestSave();
-      
-      Future.microtask(() => notifyListeners());
+      // Check if reset time has passed
+      final resetTime = DateTime(now.year, now.month, now.day, _resetHour, _resetMinute);
+      if (now.isBefore(resetTime)) return; // Not yet time to reset today
+
+      // Check frequency
+      if (!_shouldResetForFrequency(now)) return;
+
+      _performGridReset(todayStr);
     }
+  }
+
+  bool _shouldResetForFrequency(DateTime now) {
+    switch (_resetFrequency) {
+      case 'weekly':
+        return now.weekday == _resetWeekday;
+      case 'custom':
+        return _resetCustomDays.contains(now.weekday);
+      case 'daily':
+      default:
+        return true;
+    }
+  }
+
+  void _performGridReset(String newDateStr) {
+    // Archive yesterday's grid data if it had active data
+    if (_gridData.isNotEmpty) {
+      SharedPreferences.getInstance().then((prefs) {
+        final yesterdayData = jsonEncode(
+          _gridData.map((custId, inner) => MapEntry(
+            custId,
+            inner.map((itemId, cell) => MapEntry(itemId, cell.toJson())),
+          )),
+        );
+        prefs.setString('archivedGrid_$_lastActiveDateStr', yesterdayData);
+      });
+    }
+    if (_morningStock.isNotEmpty) {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('archivedMorningStock_$_lastActiveDateStr', jsonEncode(_morningStock));
+      });
+    }
+    _gridData.clear();
+    _morningStock.clear();
+    _lastActiveDateStr = newDateStr;
+    
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('lastActiveDate', newDateStr);
+    });
+    _requestSave();
+    
+    Future.microtask(() => notifyListeners());
+  }
+
+  /// Manual reset: archives current grid and clears it immediately
+  void manualReset() {
+    if (!_isLoaded) return;
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    
+    // Archive current grid data
+    if (_gridData.isNotEmpty) {
+      SharedPreferences.getInstance().then((prefs) {
+        final archiveData = jsonEncode(
+          _gridData.map((custId, inner) => MapEntry(
+            custId,
+            inner.map((itemId, cell) => MapEntry(itemId, cell.toJson())),
+          )),
+        );
+        prefs.setString('archivedGrid_${_lastActiveDateStr}_${DateTime.now().millisecondsSinceEpoch}', archiveData);
+      });
+    }
+    if (_morningStock.isNotEmpty) {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('archivedMorningStock_${_lastActiveDateStr}_${DateTime.now().millisecondsSinceEpoch}', jsonEncode(_morningStock));
+      });
+    }
+    _gridData.clear();
+    _morningStock.clear();
+    _lastActiveDateStr = todayStr;
+    
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('lastActiveDate', todayStr);
+    });
+    _requestSave();
+    notifyListeners();
   }
 
   // ===================== PERSISTENCE =====================
@@ -151,13 +220,29 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> _loadFromDisk() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Check midnight reset during startup
+    // Load reset settings
+    _resetMode = prefs.getString('resetMode') ?? 'auto';
+    _resetHour = prefs.getInt('resetHour') ?? 0;
+    _resetMinute = prefs.getInt('resetMinute') ?? 0;
+    _resetFrequency = prefs.getString('resetFrequency') ?? 'daily';
+    _resetWeekday = prefs.getInt('resetWeekday') ?? 1;
+    final customDaysJson = prefs.getString('resetCustomDays');
+    if (customDaysJson != null) {
+      _resetCustomDays = List<int>.from(jsonDecode(customDaysJson));
+    }
+
+    // Check reset during startup
     _lastActiveDateStr = prefs.getString('lastActiveDate');
-    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    final now = DateTime.now();
+    final todayStr = now.toIso8601String().substring(0, 10);
     bool shouldResetGrid = false;
 
-    if (_lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
-      shouldResetGrid = true;
+    if (_resetMode == 'auto' && _lastActiveDateStr != null && _lastActiveDateStr != todayStr) {
+      // Check if reset time has passed and frequency matches
+      final resetTime = DateTime(now.year, now.month, now.day, _resetHour, _resetMinute);
+      if (!now.isBefore(resetTime) && _shouldResetForFrequency(now)) {
+        shouldResetGrid = true;
+      }
     }
 
     // Load customers
@@ -561,6 +646,41 @@ class DataProvider with ChangeNotifier, WidgetsBindingObserver {
     notifyListeners();
     _requestSave();
   }
+
+  // ===================== RESET SETTINGS =====================
+
+  String get resetMode => _resetMode;
+  int get resetHour => _resetHour;
+  int get resetMinute => _resetMinute;
+  String get resetFrequency => _resetFrequency;
+  int get resetWeekday => _resetWeekday;
+  List<int> get resetCustomDays => List.unmodifiable(_resetCustomDays);
+
+  Future<void> updateResetSettings({
+    required String mode,
+    required int hour,
+    required int minute,
+    required String frequency,
+    required int weekday,
+    required List<int> customDays,
+  }) async {
+    _resetMode = mode;
+    _resetHour = hour;
+    _resetMinute = minute;
+    _resetFrequency = frequency;
+    _resetWeekday = weekday;
+    _resetCustomDays = List.from(customDays);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('resetMode', mode);
+    await prefs.setInt('resetHour', hour);
+    await prefs.setInt('resetMinute', minute);
+    await prefs.setString('resetFrequency', frequency);
+    await prefs.setInt('resetWeekday', weekday);
+    await prefs.setString('resetCustomDays', jsonEncode(customDays));
+
+    notifyListeners();
+  }
 }
 
 class LocaleProvider with ChangeNotifier {
@@ -638,4 +758,18 @@ class LocaleProvider with ChangeNotifier {
   String get noRecordsToShare => _isNepali ? 'सेयर गर्न कुनै रेकर्ड छैन' : 'No records to share';
   String get delivered => _isNepali ? 'दिएको' : 'Delivered';
   String get totalAmount => _isNepali ? 'कुल रकम' : 'Total Amount';
+
+  String get resetSettings => _isNepali ? 'रिसेट सेटिङ' : 'Reset Settings';
+  String get resetGrid => _isNepali ? 'ग्रिड रिसेट गर्नुहोस्' : 'Reset Grid Now';
+  String get resetGridConfirm => _isNepali ? 'के तपाईं ग्रिड र गाडी लोड रिसेट गर्न चाहनुहुन्छ? डाटा संग्रहित हुनेछ।' : 'Reset the grid and vehicle stock? Data will be archived.';
+  String get resetMode => _isNepali ? 'रिसेट मोड' : 'Reset Mode';
+  String get automatic => _isNepali ? 'स्वचालित' : 'Automatic';
+  String get manualOnly => _isNepali ? 'म्यानुअल मात्र' : 'Manual Only';
+  String get resetTime => _isNepali ? 'रिसेट समय' : 'Reset Time';
+  String get resetFrequency => _isNepali ? 'कहिले रिसेट' : 'Reset Frequency';
+  String get daily => _isNepali ? 'दैनिक' : 'Daily';
+  String get weekly => _isNepali ? 'साप्ताहिक' : 'Weekly';
+  String get custom => _isNepali ? 'कस्टम दिन' : 'Custom Days';
+  String get resetSuccessful => _isNepali ? 'ग्रिड सफलतापूर्वक रिसेट भयो!' : 'Grid reset successfully!';
+  String get confirm => _isNepali ? 'पुष्टि गर्नुहोस्' : 'Confirm';
 }

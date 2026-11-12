@@ -38,6 +38,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  String _formatDateTime(DateTime date) {
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final amPm = date.hour >= 12 ? 'PM' : 'AM';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day} · $hour:${date.minute.toString().padLeft(2, '0')} $amPm';
+  }
+
   void _pickDate(BuildContext context) async {
     final picked = await showDatePicker(
       context: context,
@@ -350,7 +357,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
                                             Text('Net: ${tx.delivered - tx.returned}', style: const TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-                                            Text('${tx.date.hour}:${tx.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                            Text(_formatDateTime(tx.date), style: const TextStyle(color: Colors.grey, fontSize: 11)),
                                           ],
                                         ),
                                       ],
